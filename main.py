@@ -25,7 +25,6 @@ model = load_model("model/clf_model_phase_test.h5")
 
 labels = ['Tanah Aluvial', 'Tanah Hitam', 'Tanah Liat', 'Tanah Merah']
 
-# Database tanaman dan kebutuhan dasarnya
 plants = [
     {"name": "padi", "min_ph": 5.0, "max_ph": 6.5, "min_organic": 20, "min_water": 5, "soil": ["Cambisols", "Fluvisols"]},
     {"name": "jagung", "min_ph": 5.5, "max_ph": 7.0, "min_organic": 20, "min_water": 4, "soil": ["Cambisols", "Andisols"]},
@@ -49,6 +48,12 @@ plants = [
     {"name": "kapas", "min_ph": 6.0, "max_ph": 7.5, "min_organic": 10, "min_water": 3, "soil": ["Cambisols"]},
     {"name": "rami", "min_ph": 6.0, "max_ph": 7.0, "min_organic": 15, "min_water": 5, "soil": ["Cambisols"]},
     {"name": "kopi", "min_ph": 5.0, "max_ph": 6.5, "min_organic": 25, "min_water": 4, "soil": ["Cambisols", "Andisols"]}
+]
+
+plants_name = [
+    "padi", "jagung", "kacang arab", "kacang merah", "kacang gude", "kacang ngengat", "kacang hijau", 
+    "kacang hitam", "kacang lentil", "delima", "pisang", "mangga", "anggur", "semangka",
+    "blewah", "apel", "jeruk", "pepaya", "kelapa", "kapas", "rami", "kopi"
 ]
 
 # Data tambahan berdasarkan jenis tanah umum
@@ -146,14 +151,24 @@ async def predict(file: UploadFile = File(...)):
         "high_confidence": high_confidence,
     }
 
-class WaterQualityRequest(BaseModel):
+
+url_ollama = "https://ollama.noturmine.my.id/api/generate"
+
+class analyzeRequest(BaseModel):
     ph: float
     soil: str
     organic_matter: float
     water_content: float
+    
+class RecommendationRequest(BaseModel):
+    plants: list[str]
+    averageTemperature: float
+    averageHumidity: float
+    averageRainfall: float
+    averageRainfallType: float
 
 @app.post("/api/soil/analyze")
-async def analyze(request: WaterQualityRequest):
+async def analyze(request: analyzeRequest):
     """
     Recommends suitable plants based on soil parameters.r
     """
@@ -172,7 +187,61 @@ async def analyze(request: WaterQualityRequest):
     
     return response
 
-url_ollama = "https://ollama.noturmine.my.id/api/generate"
+@app.post("/api/soil/recommendation")
+async def recommendation(request: RecommendationRequest):
+    question = (
+        f"Based on the following parameters: {request.plants}, "
+        f"average temperature: {request.averageTemperature}°C, "
+        f"average humidity: {request.averageHumidity}%, "
+        f"average rainfall: {request.averageRainfall}mm, "
+        f"and average rainfall type: {request.averageRainfallType}, "
+        f"please recommend suitable plants for cultivation. "
+        f"Please provide a short answer (150 characters) and don't make it too long. "
+        f"Please provide the answer in Indonesian."
+        f"don't ask anything, just answer the question."
+    )
+    
+    req = {
+        "model": "gemma3:1b",
+        "prompt": question,
+        "stream": True,
+        "options": {
+            "temperature": 0.1,
+            "top_p": 0.8,
+            "top_k": 20,
+            "max_new_tokens": 64,
+            "num_ctx": 256,
+            "use_cache": True,
+            "use_mlock": False,
+            "use_gpu": False,
+            "use_fp16": True,
+            "use_4bit": True,
+            "use_8bit": False,
+            "num_predict": 150,
+            "num_threads": 4,
+            "num_batch": 1
+        }
+    }
+    
+    full_response = ""
+    
+    async with httpx.AsyncClient(timeout=None) as client:
+        async with client.stream("POST", url_ollama, json=req) as resp:
+            async for line in resp.aiter_lines():
+                if line.strip():
+                    try:
+                        data = json.loads(line)
+                        full_response += data.get("response", "")
+                    except json.JSONDecodeError:
+                        continue
+    
+    formatted_response = format_response(full_response)
+    
+    return {
+        "message": question,
+        "response": formatted_response,
+    }
+
 
 def convert_bold(text):
     return re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', text)
@@ -214,7 +283,7 @@ async def question(request: qRequest):
     )
 
     req = {
-        "model": "gemma3:1b",  # Consider even smaller models (e.g., TinyLlama, Phi-2)
+        "model": "gemma3:1b",
         # "model": "qwen3:0.6b",
         # "model": "mistral:7b-instruct-v0.2-q4_0",
         # "model": "tinyllama:1.1b",
