@@ -10,6 +10,7 @@ import asyncio
 import re
 from pydantic import BaseModel
 from tensorflow.keras.models import load_model # type: ignore
+import pymysql # type: ignore
 
 app = FastAPI()
 
@@ -21,91 +22,97 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+recommendation_plants = []
+
+kondisi_tanaman = []
+
+db = pymysql.connect(
+    host="localhost",
+    user="root",
+    password="",
+    database="gis_system",
+)
+
+def fetch_plants():
+    cursor = db.cursor(pymysql.cursors.DictCursor)
+    cursor.execute("SELECT * FROM kondisi_tanaman WHERE label != 'Tidak Ada'")
+    rows = cursor.fetchall()
+    cursor.close()
+    return rows
+
+@app.on_event("startup")
+async def startup_event():
+    global kondisi_tanaman
+    kondisi_tanaman = fetch_plants()
+
 model = load_model("model/clf_model_phase_test.h5")
 
 labels = ['Tanah Aluvial', 'Tanah Hitam', 'Tanah Liat', 'Tanah Merah']
 
-plants = [
-    {"name": "padi", "min_ph": 5.0, "max_ph": 6.5, "min_organic": 20, "min_water": 5, "soil": ["Cambisols", "Fluvisols"]},
-    {"name": "jagung", "min_ph": 5.5, "max_ph": 7.0, "min_organic": 20, "min_water": 4, "soil": ["Cambisols", "Andisols"]},
-    {"name": "kacang arab", "min_ph": 5.0, "max_ph": 7.0, "min_organic": 15, "min_water": 4, "soil": ["Cambisols"]},
-    {"name": "kacang merah", "min_ph": 5.5, "max_ph": 6.8, "min_organic": 20, "min_water": 4, "soil": ["Cambisols", "Luvisols"]},
-    {"name": "kacang gude", "min_ph": 5.5, "max_ph": 7.0, "min_organic": 15, "min_water": 3, "soil": ["Vertisols", "Cambisols"]},
-    {"name": "kacang ngengat", "min_ph": 6.0, "max_ph": 7.5, "min_organic": 10, "min_water": 3, "soil": ["Cambisols"]},
-    {"name": "kacang hijau", "min_ph": 5.0, "max_ph": 6.5, "min_organic": 10, "min_water": 3, "soil": ["Cambisols", "Fluvisols"]},
-    {"name": "kacang hitam", "min_ph": 5.5, "max_ph": 6.5, "min_organic": 20, "min_water": 3, "soil": ["Cambisols"]},
-    {"name": "kacang lentil", "min_ph": 6.0, "max_ph": 7.5, "min_organic": 15, "min_water": 3, "soil": ["Cambisols"]},
-    {"name": "delima", "min_ph": 5.5, "max_ph": 7.0, "min_organic": 20, "min_water": 4, "soil": ["Cambisols"]},
-    {"name": "pisang", "min_ph": 5.5, "max_ph": 6.5, "min_organic": 25, "min_water": 5, "soil": ["Cambisols", "Andisols"]},
-    {"name": "mangga", "min_ph": 5.5, "max_ph": 7.5, "min_organic": 15, "min_water": 4, "soil": ["Cambisols", "Luvisols"]},
-    {"name": "anggur", "min_ph": 6.0, "max_ph": 7.5, "min_organic": 10, "min_water": 3, "soil": ["Cambisols"]},
-    {"name": "semangka", "min_ph": 6.0, "max_ph": 6.8, "min_organic": 15, "min_water": 4, "soil": ["Cambisols"]},
-    {"name": "blewah", "min_ph": 6.0, "max_ph": 6.8, "min_organic": 15, "min_water": 4, "soil": ["Cambisols"]},
-    {"name": "apel", "min_ph": 6.0, "max_ph": 6.8, "min_organic": 20, "min_water": 5, "soil": ["Luvisols"]},
-    {"name": "jeruk", "min_ph": 6.0, "max_ph": 6.5, "min_organic": 25, "min_water": 4, "soil": ["Cambisols"]},
-    {"name": "pepaya", "min_ph": 5.5, "max_ph": 6.7, "min_organic": 20, "min_water": 4, "soil": ["Cambisols"]},
-    {"name": "kelapa", "min_ph": 5.0, "max_ph": 7.0, "min_organic": 20, "min_water": 4, "soil": ["Cambisols"]},
-    {"name": "kapas", "min_ph": 6.0, "max_ph": 7.5, "min_organic": 10, "min_water": 3, "soil": ["Cambisols"]},
-    {"name": "rami", "min_ph": 6.0, "max_ph": 7.0, "min_organic": 15, "min_water": 5, "soil": ["Cambisols"]},
-    {"name": "kopi", "min_ph": 5.0, "max_ph": 6.5, "min_organic": 25, "min_water": 4, "soil": ["Cambisols", "Andisols"]}
-]
+scientific_to_common = {
+    "Cambisols": "Tanah Aluvial",
+    "Andosols": "Tanah Hitam",
+    "Arenosols": "Tanah Liat",
+    "Podzols": "Tanah Merah",
+    "Gleysols": "Tanah Aluvial",
+    "Fluvisols": "Tanah Aluvial",
+    "Vertisols": "Tanah Liat",
+    "Luvisols": "Tanah Liat",
+    "Chernozem": "Tanah Hitam",
+    "Phaeozem": "Tanah Hitam",
+    "Acrisol": "Tanah Merah",
+    "Oxisol": "Tanah Merah",
+    "Spodosol": "Tanah Merah",
+    "Histosol": "Tanah Aluvial",
+    "Regosol": "Tanah Aluvial",
+    "Leptosol": "Tanah Liat",
+    "Calcisol": "Tanah Liat",
+    "Salinosol": "Tanah Liat",
+    "Solonchak": "Tanah Liat"
+}
 
-plants_name = [
-    "padi", "jagung", "kacang arab", "kacang merah", "kacang gude", "kacang ngengat", "kacang hijau", 
-    "kacang hitam", "kacang lentil", "delima", "pisang", "mangga", "anggur", "semangka",
-    "blewah", "apel", "jeruk", "pepaya", "kelapa", "kapas", "rami", "kopi"
-]
-
-# Data tambahan berdasarkan jenis tanah umum
 recommendations = [
     {
         "soil": "Tanah Aluvial",
         "suitable_crops": [
-            "padi", "jagung", "kacang hijau", "kacang merah", "kacang hitam",
-            "kacang gude", "pisang", "semangka", "blewah", "pepaya"
+            "Padi", "Jagung", "Kacang Hijau", "Pisang", "Semangka", "Pepaya",
+            "Bawang Merah", "Bawang Putih", "Daun Bawang", "Cabai", 
+            "Melon", "Kacang Kedelai", "Kacang Tanah"
         ],
-        "reason": "Tanah Aluvial subur, memiliki kandungan hara tinggi dan baik untuk pertanian musiman seperti padi, jagung, kacang-kacangan, dan buah-buahan tropis yang butuh banyak air."
+        "reason": "Tanah Aluvial subur, memiliki kandungan hara tinggi dan baik untuk pertanian musiman seperti padi, jagung, kacang-kacangan, sayuran, dan buah-buahan tropis yang butuh banyak air."
     },
     {
         "soil": "Tanah Hitam",
         "suitable_crops": [
-            "padi", "jagung", "kacang hijau", "kacang merah", "kacang arab", "pisang",
-            "mangga", "anggur", "apel", "jeruk", "pepaya", "kelapa", "kopi"
+            "Padi", "Jagung", "Kacang Hijau", "Pisang", "Mangga", "Jeruk", "Pepaya", "Kopi", "Kubis", "Teh"
         ],
-        "reason": "Tanah hitam kaya bahan organik dan memiliki struktur gembur sehingga cocok untuk berbagai tanaman pangan dan buah-buahan, serta tanaman tahunan seperti kopi dan kelapa."
+        "reason": "Tanah hitam kaya bahan organik dan memiliki struktur gembur sehingga cocok untuk berbagai tanaman pangan, buah-buahan, serta tanaman tahunan seperti kopi dan teh."
     },
     {
         "soil": "Tanah Liat",
         "suitable_crops": [
-            "padi", "kacang hijau", "kacang merah", "kacang hitam", "kacang arab",
-            "pisang", "pepaya", "kapas", "rami"
+            "Padi", "Kacang Hijau", "Pisang", "Pepaya", "Kacang Kedelai", "Ubi Jalar"
         ],
-        "reason": "Tanah liat menahan air dengan baik, cocok untuk tanaman yang membutuhkan kelembaban tinggi dan akar kuat, tetapi harus dikelola agar tidak terlalu padat."
+        "reason": "Tanah liat menahan air dengan baik, cocok untuk tanaman yang membutuhkan kelembaban tinggi dan akar kuat, termasuk tanaman umbi dan kacang-kacangan."
     },
     {
         "soil": "Tanah Merah",
         "suitable_crops": [
-            "jagung", "kacang gude", "kacang ngengat", "kacang lentil", "mangga",
-            "anggur", "delima", "kapas", "rami", "kopi"
+            "Jagung", "Mangga", "Kopi", "Cabai", "Singkong", "Ubi Jalar"
         ],
-        "reason": "Tanah merah kurang subur dan cepat kering, tetapi cocok untuk tanaman yang toleran terhadap kondisi kering dan tanah kurang organik."
+        "reason": "Tanah merah kurang subur dan cepat kering, tetapi cocok untuk tanaman yang toleran terhadap kondisi kering dan tanah miskin hara seperti singkong dan cabai."
     }
 ]
 
-def is_suitable(plant, request):
-    return (
-        plant["min_ph"] <= request.ph <= plant["max_ph"] and
-        request.organic_matter >= plant["min_organic"] and
-        request.water_content >= plant["min_water"] and
-        request.soil in plant["soil"]
-    )
-
-soil_to_scientific = {
-    "Tanah Aluvial": "Fluvisols",
-    "Tanah Hitam": "Andisols",
-    "Tanah Liat": "Vertisols",
-    "Tanah Merah": "Cambisols"
-}
+def find_suitable_plants(all_plants, parameters):
+    recommendations = []
+    for tanaman in all_plants:
+        if (tanaman['ph_min'] <= parameters['ph'] <= tanaman['ph_max'] or
+            tanaman['potassium_min'] <= parameters['cec'] <= tanaman['potassium_max'] or 
+            tanaman['carbon_min'] <= parameters['carbon'] <= tanaman['carbon_max'] or
+            tanaman['nitrogen_min'] <= parameters['nitrogen'] <= tanaman['nitrogen_max']):
+            recommendations.append(tanaman['label'])
+    return recommendations
 
 @app.post("/api/soil/predict")
 async def predict(file: UploadFile = File(...)):
@@ -151,97 +158,44 @@ async def predict(file: UploadFile = File(...)):
         "high_confidence": high_confidence,
     }
 
-
-url_ollama = "https://ollama.noturmine.my.id/api/generate"
-
 class analyzeRequest(BaseModel):
     ph: float
     soil: str
-    organic_matter: float
-    water_content: float
+    carbon: float
+    nitrogen: float
+    cec: float
     
-class RecommendationRequest(BaseModel):
-    plants: list[str]
-    averageTemperature: float
-    averageHumidity: float
-    averageRainfall: float
-    averageRainfallType: float
-
 @app.post("/api/soil/analyze")
-async def analyze(request: analyzeRequest):
-    """
-    Recommends suitable plants based on soil parameters.r
-    """
-    # Find suitable plants based on scientific parameters
-    recommended = [plant["name"] for plant in plants if is_suitable(plant, request)]
+async def analyze(request: analyzeRequest):    
+    recommendation_plants = find_suitable_plants(kondisi_tanaman, {
+        "ph": request.ph,
+        "cec": request.cec,
+        "carbon": request.carbon,
+        "nitrogen": request.nitrogen
+    })
     
-    response = {
-        "soil_parameters": {
-            "ph": request.ph,
-            "organic_matter": request.organic_matter,
-            "soil_class": request.soil,
-            "water_content": request.water_content
-        },
-        "recommended_plants": recommended
-    }
+    print(scientific_to_common.get(request.soil, request.soil))
     
-    return response
-
-@app.post("/api/soil/recommendation")
-async def recommendation(request: RecommendationRequest):
-    question = (
-        f"Based on the following parameters: {request.plants}, "
-        f"average temperature: {request.averageTemperature}°C, "
-        f"average humidity: {request.averageHumidity}%, "
-        f"average rainfall: {request.averageRainfall}mm, "
-        f"and average rainfall type: {request.averageRainfallType}, "
-        f"please recommend suitable plants for cultivation. "
-        f"Please provide a short answer (150 characters) and don't make it too long. "
-        f"Please provide the answer in Indonesian."
-        f"don't ask anything, just answer the question."
-    )
     
-    req = {
-        "model": "gemma3:1b",
-        "prompt": question,
-        "stream": True,
-        "options": {
-            "temperature": 0.1,
-            "top_p": 0.8,
-            "top_k": 20,
-            "max_new_tokens": 64,
-            "num_ctx": 256,
-            "use_cache": True,
-            "use_mlock": False,
-            "use_gpu": False,
-            "use_fp16": True,
-            "use_4bit": True,
-            "use_8bit": False,
-            "num_predict": 150,
-            "num_threads": 4,
-            "num_batch": 1
+    if request.soil:
+        for soil in recommendations:
+            if soil["soil"] == scientific_to_common.get(request.soil, request.soil):
+                recommendation_plants = {
+                    "suitable_crops": soil["suitable_crops"],
+                    "reason": soil["reason"],
+                    "soil_parameters": request,
+                    "plants_by_condition": recommendation_plants
+                }
+                break
+    else:
+        recommendation_plants = {
+            "suitable_crops": [],
+            "reason": "",
+            "soil_parameters": request,
+            "plants_by_condition": recommendation_plants
         }
-    }
     
-    full_response = ""
-    
-    async with httpx.AsyncClient(timeout=None) as client:
-        async with client.stream("POST", url_ollama, json=req) as resp:
-            async for line in resp.aiter_lines():
-                if line.strip():
-                    try:
-                        data = json.loads(line)
-                        full_response += data.get("response", "")
-                    except json.JSONDecodeError:
-                        continue
-    
-    formatted_response = format_response(full_response)
-    
-    return {
-        "message": question,
-        "response": formatted_response,
-    }
-
+    return recommendation_plants
 
 def convert_bold(text):
     return re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', text)
@@ -269,6 +223,8 @@ class qRequest(BaseModel):
     stemCondition: str
     growth: str
     leafCondition: list[str]
+
+url_ollama = "https://ollama.noturmine.my.id/api/generate"
 
 @app.post("/api/health-assessment")
 async def question(request: qRequest):
