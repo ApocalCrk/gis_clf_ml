@@ -174,9 +174,10 @@ async def analyze(request: analyzeRequest):
         "nitrogen": request.nitrogen
     })
     
-    print(scientific_to_common.get(request.soil, request.soil))
-    
-    
+    recommendation_plants = list(set(recommendation_plants))
+    if not recommendation_plants:
+        recommendation_plants = ["Tidak ada tanaman yang cocok dengan kondisi tanah ini."]
+        
     if request.soil:
         for soil in recommendations:
             if soil["soil"] == scientific_to_common.get(request.soil, request.soil):
