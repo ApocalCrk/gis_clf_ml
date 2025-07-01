@@ -45,73 +45,76 @@ async def startup_event():
     global kondisi_tanaman
     kondisi_tanaman = fetch_plants()
 
-model = load_model("model/clf_model_phase_test.h5")
+model = load_model("model/soil_texture_classifier.h5")
 
-labels = ['Tanah Aluvial', 'Tanah Hitam', 'Tanah Liat', 'Tanah Merah']
-
-scientific_to_common = {
-    "Cambisols": "Tanah Aluvial",
-    "Andosols": "Tanah Hitam",
-    "Arenosols": "Tanah Liat",
-    "Podzols": "Tanah Merah",
-    "Gleysols": "Tanah Aluvial",
-    "Fluvisols": "Tanah Aluvial",
-    "Vertisols": "Tanah Liat",
-    "Luvisols": "Tanah Liat",
-    "Chernozem": "Tanah Hitam",
-    "Phaeozem": "Tanah Hitam",
-    "Acrisol": "Tanah Merah",
-    "Oxisol": "Tanah Merah",
-    "Spodosol": "Tanah Merah",
-    "Histosol": "Tanah Aluvial",
-    "Regosol": "Tanah Aluvial",
-    "Leptosol": "Tanah Liat",
-    "Calcisol": "Tanah Liat",
-    "Salinosol": "Tanah Liat",
-    "Solonchak": "Tanah Liat"
-}
-
-recommendations = [
-    {
-        "soil": "Tanah Aluvial",
-        "suitable_crops": [
-            "Padi", "Jagung", "Kacang Hijau", "Pisang", "Semangka", "Pepaya",
-            "Bawang Merah", "Bawang Putih", "Daun Bawang", "Cabai", 
-            "Melon", "Kacang Kedelai", "Kacang Tanah"
-        ],
-        "reason": "Tanah Aluvial subur, memiliki kandungan hara tinggi dan baik untuk pertanian musiman seperti padi, jagung, kacang-kacangan, sayuran, dan buah-buahan tropis yang butuh banyak air."
-    },
-    {
-        "soil": "Tanah Hitam",
-        "suitable_crops": [
-            "Padi", "Jagung", "Kacang Hijau", "Pisang", "Mangga", "Jeruk", "Pepaya", "Kopi", "Kubis", "Teh"
-        ],
-        "reason": "Tanah hitam kaya bahan organik dan memiliki struktur gembur sehingga cocok untuk berbagai tanaman pangan, buah-buahan, serta tanaman tahunan seperti kopi dan teh."
-    },
-    {
-        "soil": "Tanah Liat",
-        "suitable_crops": [
-            "Padi", "Kacang Hijau", "Pisang", "Pepaya", "Kacang Kedelai", "Ubi Jalar"
-        ],
-        "reason": "Tanah liat menahan air dengan baik, cocok untuk tanaman yang membutuhkan kelembaban tinggi dan akar kuat, termasuk tanaman umbi dan kacang-kacangan."
-    },
-    {
-        "soil": "Tanah Merah",
-        "suitable_crops": [
-            "Jagung", "Mangga", "Kopi", "Cabai", "Singkong", "Ubi Jalar"
-        ],
-        "reason": "Tanah merah kurang subur dan cepat kering, tetapi cocok untuk tanaman yang toleran terhadap kondisi kering dan tanah miskin hara seperti singkong dan cabai."
-    }
+labels = [
+    "clay",
+    "sandy",
+    "loamy",
+    "laterite",
+    "humus"
 ]
 
+scientific_to_common = {
+    "Vertisols": "clay",
+    "Planosols": "clay",
+    "Luvisols": "clay",
+    "Nitisols": "clay",
+    "Regosols": "sandy",
+    "Arenosols": "sandy",
+    "Leptosols": "sandy",
+    "Cambisols": "loamy",
+    "Fluvisols": "loamy",
+    "Gleysols": "loamy",
+    "Acrisols": "laterite",
+    "Ferralsols": "laterite",
+    "Lixisols": "laterite",
+    "Histosols": "humus",
+    "Andosols": "humus",
+    "Umbrisols": "humus"
+}
+
+cnn_to_texture_map = {
+    "clay": ["Clay Soil", "Clay Loam", "Silty Clay"],
+    "sandy": ["Sandy Soil", "Sandy Loam"],
+    "loamy": ["Loam", "Silty Loam"],
+    "laterite": ["Red Soil", "Laterite Soil"],
+    "humus": ["Peaty Soil", "Organic Soil", "Humus"]
+}
+
+def get_recommendation_by_soil_texture(kondisi_data, cnn_label):
+    texture_labels = cnn_to_texture_map.get(cnn_label, [])
+
+    hasil = []
+    for tanaman in kondisi_data:
+        if any(texture in tanaman['soil_texture'] for texture in texture_labels):
+            hasil.append({
+                "suitable_crops": tanaman['label'],
+                "soil": tanaman['soil_texture']
+            })
+
+    return hasil
+
 def find_suitable_plants(all_plants, parameters):
+    scientific_label = parameters['soil']
+    cnn_label = scientific_to_common.get(scientific_label, None)
+    if not cnn_label:
+        return []  
+    
+    texture_labels = cnn_to_texture_map.get(cnn_label, [])
+
     recommendations = []
+    
     for tanaman in all_plants:
-        if (tanaman['ph_min'] <= parameters['ph'] <= tanaman['ph_max'] or
-            tanaman['potassium_min'] <= parameters['cec'] <= tanaman['potassium_max'] or 
-            tanaman['carbon_min'] <= parameters['carbon'] <= tanaman['carbon_max'] or
-            tanaman['nitrogen_min'] <= parameters['nitrogen'] <= tanaman['nitrogen_max']):
+        cocok_soil = any(texture in tanaman['soil_texture'] for texture in texture_labels)
+        cocok_ph = tanaman['ph_min'] <= parameters['ph'] <= tanaman['ph_max']
+        cocok_cec = tanaman['potassium_min'] <= parameters['cec'] <= tanaman['potassium_max']
+        cocok_carbon = tanaman['carbon_min'] <= parameters['carbon'] <= tanaman['carbon_max']
+        cocok_nitrogen = tanaman['nitrogen_min'] <= parameters['nitrogen'] <= tanaman['nitrogen_max']
+
+        if cocok_soil and cocok_ph and cocok_cec and cocok_carbon and cocok_nitrogen:
             recommendations.append(tanaman['label'])
+
     return recommendations
 
 @app.post("/api/soil/predict")
@@ -121,27 +124,34 @@ async def predict(file: UploadFile = File(...)):
     img = cv2.imdecode(np_img, cv2.IMREAD_COLOR)
     img = cv2.resize(img, (224, 224))
     img = img / 255.0 
-
     img = np.expand_dims(img, axis=0)
+
     prediction = model.predict(img)
     predicted_class = int(np.argmax(prediction, axis=1)[0])
-    
     confidence = float(np.max(prediction))
-    label = labels[predicted_class]
+    texture_label = labels[predicted_class]
     
     recomendation_data = {}
+
+    rekomendasi = get_recommendation_by_soil_texture(kondisi_tanaman, texture_label)
     
-    for soil in recommendations:
-        if soil["soil"] == label:
-            recomendation_data = {
-                "suitable_crops": soil["suitable_crops"],
-                "reason": soil["reason"]
-            }
-            break
-    
+    if rekomendasi:
+        temp_data = {
+            "suitable_crops": [item['suitable_crops'] for item in rekomendasi]
+        }
+        
+        if len(rekomendasi) > 1:
+            temp_data["reason"] = f"Tanaman yang cocok untuk tanah {texture_label} meliputi: {', '.join(temp_data['suitable_crops'])}."
+        else:
+            temp_data["reason"] = f"Tanaman yang cocok untuk tanah {texture_label} adalah: {temp_data['suitable_crops'][0]}."
+            
+        recomendation_data = {
+            "suitable_crops": temp_data["suitable_crops"],
+            "reason": temp_data["reason"]
+        }
+
     warning = ""
     high_confidence = ""
-    
     if confidence < 0.6:
         warning = "Peringatan: Ketepatan prediksi rendah. Silakan coba lagi dengan gambar yang lebih jelas atau coba gambar lain."
     elif confidence < 0.8:
@@ -151,11 +161,11 @@ async def predict(file: UploadFile = File(...)):
 
     return {
         "predicted_class": predicted_class,
-        "label": label,
+        "label": texture_label,
         "recommendation": recomendation_data,
         "confidence": float(np.max(prediction)),
         "warning": warning,
-        "high_confidence": high_confidence,
+        "high_confidence": high_confidence
     }
 
 class analyzeRequest(BaseModel):
@@ -175,19 +185,32 @@ async def analyze(request: analyzeRequest):
     })
     
     recommendation_plants = list(set(recommendation_plants))
-    if not recommendation_plants:
-        recommendation_plants = ["Tidak ada tanaman yang cocok dengan kondisi tanah ini."]
-        
+    
     if request.soil:
-        for soil in recommendations:
-            if soil["soil"] == scientific_to_common.get(request.soil, request.soil):
-                recommendation_plants = {
-                    "suitable_crops": soil["suitable_crops"],
-                    "reason": soil["reason"],
-                    "soil_parameters": request,
-                    "plants_by_condition": recommendation_plants
-                }
-                break
+        scientific_label = request.soil
+        cnn_label = scientific_to_common.get(scientific_label, None)
+        
+        if cnn_label:
+            recommendation_plants = get_recommendation_by_soil_texture(kondisi_tanaman, cnn_label)
+            if recommendation_plants:
+                recommendation_plants = [item['suitable_crops'] for item in recommendation_plants]
+            else:
+                recommendation_plants = []
+        else:
+            recommendation_plants = []
+            
+    if recommendation_plants:
+        if len(recommendation_plants) > 1:
+            reason = f"Tanaman yang cocok untuk tanah {request.soil} meliputi: {', '.join(recommendation_plants)}."
+        else:
+            reason = f"Tanaman yang cocok untuk tanah {request.soil} adalah: {recommendation_plants[0]}."
+        
+        recommendation_plants = {
+            "suitable_crops": recommendation_plants,
+            "reason": reason,
+            "soil_parameters": request,
+            "plants_by_condition": recommendation_plants
+        }
     else:
         recommendation_plants = {
             "suitable_crops": [],
