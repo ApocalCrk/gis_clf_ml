@@ -10,8 +10,11 @@ from tqdm import tqdm
 base_input_dir = "../dataset/_train"
 base_output_dir = "../dataset/train_aug"
 
-target_classes = ["05_humus"]
-augment_count = 4
+target_classes = {
+    "sandy": 2,      # 660 gambar
+    "laterite": 2,   # 598 gambar
+    "humus": 4       # 330 gambar
+}
 
 transform = A.Compose([
     A.HorizontalFlip(p=0.5),
@@ -22,7 +25,8 @@ transform = A.Compose([
     A.GaussianBlur(blur_limit=3, p=0.3),
 ])
 
-def augment_class_folder(class_name):
+
+def augment_class_folder(class_name, augment_count):
     input_dir = os.path.join(base_input_dir, class_name)
     output_dir = os.path.join(base_output_dir, class_name)
     os.makedirs(output_dir, exist_ok=True)
@@ -40,7 +44,8 @@ def augment_class_folder(class_name):
                 aug_filename = f"{os.path.splitext(filename)[0]}_aug{i+1}.jpg"
                 cv2.imwrite(os.path.join(output_dir, aug_filename), aug_img)
 
-for class_name in target_classes:
-    augment_class_folder(class_name)
+
+for class_name, augment_count in target_classes.items():
+    augment_class_folder(class_name, augment_count)
 
 print("✅ Augmentasi selesai untuk semua kelas.")
